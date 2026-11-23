@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PRDCV">
+<meta name="theme-color" content="#1d4ed8">
+<title>PRDCV Control Center</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+body{-webkit-tap-highlight-color:transparent}
+.tc{overflow-x:auto;-webkit-overflow-scrolling:touch}
+nav{padding-bottom:env(safe-area-inset-bottom)}
+header{padding-top:env(safe-area-inset-top)}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased pb-28">
+<header class="sticky top-0 z-40 bg-blue-700 text-white shadow-md">
+  <div class="max-w-md md:max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div>
+      <span class="text-[10px] bg-blue-500 text-blue-100 font-bold px-2 py-0.5 rounded-full">TesterViet x PRDCV</span>
+      <h1 class="text-base font-bold leading-tight mt-0.5">Control Center</h1>
+    </div>
+    <div id="accountActions" class="flex items-center gap-2" style="display:none">
+      <button id="logoutButton" onclick="logoutLocalAccount()" class="bg-blue-600 hover:bg-blue-500 rounded-full px-3 py-2 text-xs font-semibold"><i class="fa-solid fa-right-from-bracket mr-1"></i>Đăng xuất</button>
+      <button id="settingsButton" onclick="openSettings()" aria-label="Cài đặt" class="w-9 h-9 bg-blue-600 hover:bg-blue-500 rounded-full text-xs"><i class="fa-solid fa-gear"></i></button>
+    </div>
+  </div>
+</header>
+<main id="app" class="max-w-md md:max-w-6xl mx-auto p-4 space-y-4"></main>
+<nav id="nav" class="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200"></nav>
+<div id="m" class="fixed inset-0 bg-slate-900/60 z-50 items-center justify-center p-4" style="display:none">
+  <div id="mb" class="bg-white w-full max-w-md rounded-2xl p-5 shadow-xl space-y-3 max-h-[90vh] overflow-y-auto text-xs"></div>
+</div>
+<datalist id="names"></datalist>
+
+<script>
+/* ============ DỮ LIỆU ============ */
+const KEY = 'prdcv2';
+const AUTH_KEY = 'prdcv2_local_auth';
+const O = {
+  qc: ['Chờ duyệt', 'Đạt chuẩn', 'Cần quay lại'],
+  up: ['Chưa upload', 'Đã upload'],
+  ls: ['Chưa gán', 'Đang gán', 'Đã xong', 'Cần sửa'],
+  ac: ['Chờ nghiệm thu', 'Đã nghiệm thu', 'Cần sửa lại'],
+  pd: ['Chưa chi', 'Đã chi'],
+  dv: ['Chờ kiểm tra', 'Hoạt động tốt', 'Có lỗi', 'Đã trả'],
+  lv: ['Cao', 'Trung bình', 'Thấp'],
+  rs: ['Chưa giải quyết', 'Đang xử lý', 'Đã giải quyết'],
+  src: ['Nội bộ', 'Người giới thiệu', 'Facebook / khác'],
+  cam: ['L6169', 'L6170'],
+  yn: ['Chưa hỏi', 'Không', 'Có', 'Không rõ'],
+  why: ['Dính 2 hàm', 'Cắt nửa răng', 'Lóa / ánh sáng', 'Mờ / mất nét', 'Camera nghiêng / quá nhanh', 'Lỗi thiết bị', 'Khác']
+};
+const QS = [['q1', 'Răng sứ cả hàm?'], ['q2', 'Đang niềng răng?'], ['q3', 'Mất nhiều răng?'], ['q4', 'Sâu răng?'], ['q5', 'Răng quá khấp khểnh / lệch?']];
+function scr(p) { const a = QS.map(q => p[q[0]] || 'Chưa hỏi'); return a.includes('Có') ? 'Nghi không đủ' : a.every(x => x === 'Không') ? 'Đủ ĐK' : a.every(x => x === 'Chưa hỏi') ? 'Chưa sàng lọc' : 'Cần hỏi thêm'; }
+const f = (k, l, t = 'text', o) => ({ k, l, t, o });
+/* Mỗi tab là một "góc nhìn" lên cùng một bản ghi người tham gia -> nhập một lần, các tab tự cập nhật */
+const V = {
+  p: { c: 'people', f: [f('name', 'Họ tên'), f('phone', 'SĐT', 'tel'), f('src', 'Nguồn', 'sel', 'src'), f('crew', 'Phụ trách'), f('book', 'Ngày hẹn', 'date'), f('slot', 'Giờ hẹn', 'time'), f('scr', 'Sàng lọc', 'calc'), f('shoot', 'Ngày quay', 'date'), f('paid', 'Hỗ trợ', 'sel', 'pd')] },
+  v: { c: 'people', need: 'file', f: [f('name', 'Người tham gia'), f('crew', 'Phụ trách quay'), f('shoot', 'Ngày quay', 'date'), f('cam', 'Camera', 'sel', 'cam'), f('file', 'Tên file'), f('gender', 'Giới tính'), f('age', 'Nhóm tuổi'), f('size', 'Dung lượng'), f('dur', 'Thời lượng'), f('qc', 'Kết quả QC', 'sel', 'qc'), f('why', 'Lý do quay lại', 'sel', 'why')] },
+  u: { c: 'people', need: 'file', f: [f('name', 'Người tham gia'), f('file', 'Tên file'), f('upd', 'Ngày upload', 'date'), f('up', 'Upload server', 'sel', 'up'), f('qc', 'Xác nhận PRDCV', 'sel', 'qc')] },
+  l: { c: 'people', need: 'file', f: [f('name', 'Người tham gia'), f('lab', 'Người gán nhãn'), f('ls', 'Gán nhãn', 'sel', 'ls'), f('ac', 'Nghiệm thu', 'sel', 'ac')] },
+  d: { c: 'devices', f: [f('code', 'Mã nội bộ'), f('name', 'Tên thiết bị'), f('st', 'Tình trạng', 'sel', 'dv'), f('note', 'Ghi chú')] },
+  r: { c: 'risks', f: [f('title', 'Vấn đề'), f('lv', 'Mức độ', 'sel', 'lv'), f('sol', 'Phương án xử lý'), f('rs', 'Trạng thái', 'sel', 'rs')] }
+};
+const D = { src: 'Nội bộ', paid: 'Chưa chi', qc: 'Chờ duyệt', up: 'Chưa upload', ls: 'Chưa gán', ac: 'Chờ nghiệm thu', cam: 'L6169', st: 'Chờ kiểm tra', lv: 'Cao', rs: 'Chưa giải quyết' };
+
+const seed = () => ({
+  people: [],
+  devices: [
+    ['PHONE_01', 'OPPO Reno10 Pro 5G', ''], ['PHONE_02', 'OPPO A77', 'Cần bật OTG trong Cài đặt'],
+    ['CAM_L6169', 'Camera bàn chải (Item Code L6169)', 'Tài sản khách hàng'], ['CAM_L6170', 'Camera bàn chải (Item Code L6170)', 'Tài sản khách hàng'],
+    ['ACCESSORY_01', 'Đầu che sáng 1', ''], ['ACCESSORY_02', 'Đầu che sáng 2', ''], ['CABLE_01', 'Dây USB-C to USB-C', 'Mới có 1 dây']
+  ].map(([code, name, note], i) => ({ id: 'D' + i, code, name, st: 'Chờ kiểm tra', note })),
+  risks: [
+    ['Chỉ có 1 dây USB-C to USB-C cho 2 bộ thiết bị', 'Cao', 'Hỏi Panasonic bổ sung dây'],
+    ['Chưa có hướng dẫn vệ sinh camera và đầu che sáng', 'Cao', 'Hỏi Panasonic; chưa tự khử khuẩn thiết bị'],
+    ['Chưa rõ video lưu ở đâu / server chưa sẵn sàng', 'Cao', 'Giữ video trên điện thoại, không xóa, chờ hướng dẫn']
+  ].map(([title, lv, sol], i) => ({ id: 'R' + i, title, lv, sol, rs: 'Chưa giải quyết' })),
+  tasks: [],
+  activity: [],
+  cfg: { target: 200, support: 100000, crew: 'Ninh', token: '', chat: '' },
+  backup: 0
+});
+
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } };
+let S = load();
+if (!S) { S = seed(); migrate(); save(); }
+S.cfg = { open: '10:00', close: '17:00', step: 15, ...S.cfg };
+S.activity = Array.isArray(S.activity) ? S.activity : [];
+S.tasks = Array.isArray(S.tasks) ? S.tasks : [];
+let tab = 0;
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { alert('Không lưu được dữ liệu trên trình duyệt này. Hãy xuất sao lưu ngay.'); } }
+function loadAuth() {
+  try {
+    const auth = JSON.parse(localStorage.getItem(AUTH_KEY));
+    return auth && auth.version === 1 && auth.email && auth.salt && auth.hash ? auth : null;
+  } catch (e) {
+    alert('Không đọc được thông tin đăng nhập cục bộ. Hãy kiểm tra dữ liệu trình duyệt.');
+    return null;
+  }
+}
+let AUTH = loadAuth();
+if (AUTH) AUTH.session = false;
+function logActivity(action, detail, entity = '') {
+  if (!Array.isArray(S.activity)) S.activity = [];
+  S.activity.unshift({ id: uid(), at: new Date().toISOString(), date: today(), action, detail: String(detail || ''), entity });
+  if (S.activity.length > 5000) S.activity.length = 5000;
+}
+
+/* Chuyển dữ liệu từ bản cũ (nếu có) sang cấu trúc mới */
+function migrate() {
+  const old = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+  const iso = d => { const m = String(d || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : ''; };
+  const find = n => S.people.find(p => p.name.toLowerCase() === String(n).trim().toLowerCase());
+  (old('prdcv_participants') || []).forEach(p => { if (p.name) S.people.push({ ...D, id: nextId(), name: p.name, src: p.source || D.src, crew: p.crew || '', book: iso(p.dateCheck || p.date), paid: p.paid === 'Đã chi' ? 'Đã chi' : 'Chưa chi' }); });
+  (old('prdcv_videos') || []).forEach(v => {
+    let p = find(v.participant);
+    if (!p) { p = { ...D, id: nextId(), name: v.participant, src: D.src }; S.people.push(p); }
+    Object.assign(p, { crew: v.crew || p.crew, shoot: iso(v.date), cam: v.camera || D.cam, file: v.filename, size: v.size, dur: v.duration, qc: /đạt/i.test(v.qc) ? 'Đạt chuẩn' : /quay/i.test(v.qc) ? 'Cần quay lại' : 'Chờ duyệt' });
+  });
+}
+
+/* ============ TIỆN ÍCH ============ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const fd = d => d ? d.split('-').reverse().join('/') : '';
+const money = n => n.toLocaleString('vi-VN') + ' đ';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+function nextId() { const n = Math.max(0, ...S.people.map(p => parseInt(String(p.id).replace(/\D/g, '')) || 0)); return 'P-' + String(n + 1).padStart(3, '0'); }
+const chipCls = v => /Đạt chuẩn|Đã upload|Đã xong|Đã nghiệm thu|Đã chi|Hoạt động tốt|Đã giải quyết|Thấp|Đủ ĐK/.test(v) ? 'bg-emerald-100 text-emerald-800'
+  : /Cần (quay|sửa)|Có lỗi|Cao|Nghi/.test(v) ? 'bg-rose-100 text-rose-800' : /Chờ|Chưa|Đang|Trung bình|Cần hỏi/.test(v) ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700';
+
+/* ============ TỰ ĐỘNG TÍNH & CẢNH BÁO ============ */
+function stats() {
+  const P = S.people, c = S.cfg, t = today();
+  const shot = P.filter(p => p.file), ok = P.filter(p => p.qc === 'Đạt chuẩn' && p.file), redo = P.filter(p => p.qc === 'Cần quay lại');
+  const wait = shot.filter(p => p.qc === 'Chờ duyệt'), toUp = ok.filter(p => p.up !== 'Đã upload'), toPay = ok.filter(p => p.paid !== 'Đã chi');
+  const payBad = P.filter(p => p.paid === 'Đã chi' && p.qc !== 'Đạt chuẩn');
+  const rate = ok.length + redo.length ? ok.length / (ok.length + redo.length) : null;
+  const miss = Math.max(0, c.target - ok.length);
+  return {
+    reg: P.length, shot: shot.length, ok: ok.length, redo: redo.length, wait: wait.length, toUp: toUp.length, toPay: toPay.length,
+    payBad: payBad.length, rate, miss, extra: rate ? Math.ceil(miss / rate) : null, pct: c.target ? Math.min(100, ok.length / c.target * 100) : 0,
+    cash: toPay.length * c.support, paidN: P.filter(p => p.paid === 'Đã chi').length,
+    todayShot: P.filter(p => p.shoot === t).length, todayLeft: P.filter(p => p.book === t && !p.shoot).length,
+    labDone: P.filter(p => p.ls === 'Đã xong').length, labNow: P.filter(p => p.ls === 'Đang gán').length
+  };
+}
+function alerts() {
+  const s = stats(), a = [], add = (lvl, txt, to) => a.push({ lvl, txt, to });
+  if (s.payBad) add('r', `${s.payBad} người đã chi hỗ trợ nhưng video chưa được xác nhận đạt`, 0);
+  if (s.todayLeft) add('a', `Hôm nay hẹn ${s.todayLeft} người, chưa có ngày quay`, 1);
+  if (s.wait) add('a', `${s.wait} video đang chờ anh Phong xác nhận`, 2);
+  if (s.redo) add('r', `${s.redo} người cần quay lại`, 1);
+  if (s.toUp) add('a', `${s.toUp} video đạt chưa upload lên server`, 3);
+  if (s.toPay) add('a', `${s.toPay} người đủ điều kiện nhận hỗ trợ, chưa chi (${money(s.cash)})`, 1);
+  const sn = S.people.filter(p => !p.shoot && scr(p) === 'Nghi không đủ').length; if (sn) add('r', `${sn} người nghi không đủ điều kiện, chưa quay: hỏi người phụ trách trước`, 1);
+  const sh = S.people.filter(p => !p.shoot && scr(p) === 'Cần hỏi thêm').length; if (sh) add('a', `${sh} người chưa rõ điều kiện, cần hỏi thêm`, 1);
+  const dv = S.devices.filter(d => d.st === 'Chờ kiểm tra').length; if (dv) add('a', `${dv} thiết bị chờ kiểm tra thực tế`, 4);
+  const rk = S.risks.filter(r => r.rs !== 'Đã giải quyết').length; if (rk) add('a', `${rk} vấn đề/rủi ro chưa giải quyết`, 4);
+  const days = S.backup ? Math.floor((Date.now() - S.backup) / 864e5) : null;
+  if (S.people.length && (days === null || days >= 2)) add('a', days === null ? 'Chưa sao lưu dữ liệu lần nào (dữ liệu chỉ nằm trong trình duyệt này)' : `Đã ${days} ngày chưa sao lưu dữ liệu`, 'bk');
+  return a;
+}
+function report(day = today()) {
+  const s = stats(), pc = s.rate == null ? 'chưa có' : Math.round(s.rate * 100) + '%';
+  const al = alerts().filter(x => x.to !== 'bk').map(x => '- ' + x.txt);
+  const ev = (S.activity || []).filter(x => x.date === day);
+  const dayPeople = S.people.filter(p => p.shoot === day).length;
+  const dayTasks = S.tasks.filter(t => t.createdDate === day);
+  return [`BÁO CÁO PRDCV - ${fd(day)}`, `Video quay trong ngày: ${dayPeople} người`,
+    `Tổng lũy kế hiện tại: đăng ký ${s.reg} | đã quay ${s.shot} | chờ duyệt ${s.wait} | đạt ${s.ok} | cần quay lại ${s.redo}`,
+    `Lưu ý: số liệu tổng lũy kế phản ánh trạng thái hiện tại; phần nhật ký bên dưới phản ánh thao tác đúng ngày được chọn.`,
+    `Tiến độ: ${s.ok}/${S.cfg.target} video đạt (${s.pct.toFixed(1)}%), tỷ lệ đạt ${pc}` + (s.extra ? `, còn thiếu ${s.miss}, cần quay thêm khoảng ${s.extra} lượt` : `, còn thiếu ${s.miss}`),
+    `Upload: ${s.toUp} video đạt chưa upload | Hỗ trợ: đã chi ${s.paidN}, chưa chi ${s.toPay} (${money(s.cash)})`,
+    `Gán nhãn: xong ${s.labDone}, đang gán ${s.labNow}`,
+    `Hoạt động ghi nhận trong ngày: ${ev.length}`, ev.length ? 'NHẬT KÝ HOẠT ĐỘNG:\n' + ev.slice().reverse().map(x => `- ${new Date(x.at).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})} | ${x.action}: ${x.detail}`).join('\n') : 'Không có nhật ký thao tác được ghi nhận trong ngày.',
+    dayTasks.length ? 'TASK TẠO TRONG NGÀY:\n' + dayTasks.map(t => `- [${t.done ? 'x' : ' '}] ${t.t}`).join('\n') : 'Không có task mới trong ngày.',
+    al.length ? 'Cần chú ý:\n' + al.join('\n') : 'Không có việc tồn đọng.'].join('\n');
+}
+
+/* ============ GIAO DIỆN ============ */
+const TABS = [['fa-chart-pie', 'Tổng quan'], ['fa-users', 'Người'], ['fa-video', 'Video'], ['fa-cloud', 'Server & nhãn'], ['fa-shield', 'Thiết bị'], ['fa-clock-rotate-left', 'Lịch sử']];
+const card = h => `<div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">${h}</div>`;
+const head = (icon, title, btn) => `<div class="flex justify-between items-center gap-2"><h3 class="text-sm font-bold flex items-center"><i class="fa-solid ${icon} text-blue-600 mr-2"></i>${title}</h3>${btn || ''}</div>`;
+const addBtn = (vk, label) => `<button onclick="openForm('${vk}')" class="text-[11px] bg-blue-50 text-blue-700 font-bold px-3 py-1.5 rounded-full border border-blue-200"><i class="fa-solid fa-plus"></i> ${label}</button>`;
+
+function cell(v, r, x) {
+  if (x.t === 'calc') return `<span class="px-2 py-0.5 rounded font-bold ${chipCls(scr(r))}">${scr(r)}</span>`;
+  if (x.t === 'sel') return `<button onclick="cyc('${v.c}','${r.id}','${x.k}','${x.o}')" class="px-2 py-0.5 rounded font-bold ${chipCls(r[x.k] || '')}">${esc(r[x.k]) || '-'}</button>`;
+  if (x.t === 'date') return fd(r[x.k]);
+  return esc(r[x.k]);
+}
+function tbl(vk) {
+  const v = V[vk], rows = S[v.c].filter(r => !v.need || r[v.need]), ppl = v.c === 'people';
+  const statusKey = ppl ? 'qc' : (vk === 'd' ? 'st' : vk === 'r' ? 'rs' : '');
+  const statusValues = statusKey ? [...new Set(rows.map(r => r[statusKey]).filter(Boolean))] : [];
+  const th = t => `<th class="p-2 text-left">${t}</th>`;
+  const search = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2"><input id="search_${vk}" oninput="filterTable('${vk}')" placeholder="Tìm tên, SĐT, mã ID, tên file..." class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"><select id="state_${vk}" onchange="filterTable('${vk}')" class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"><option value="">Tất cả trạng thái</option>${statusValues.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select></div>`;
+  return search + `<div class="tc border border-slate-200 rounded-xl"><table id="table_${vk}" class="w-full text-xs whitespace-nowrap"><thead class="bg-slate-100 text-[11px] text-slate-600"><tr>${th('#')}${ppl ? th('Mã') : ''}${v.f.map(x => th(x.l)).join('')}<th></th></tr></thead><tbody class="divide-y divide-slate-100">` +
+    (rows.map((r, i) => {
+      const searchable = [r.id,r.name,r.phone,r.file,r.code,r.title,r.note,...v.f.map(x=>r[x.k])].filter(Boolean).join(' ').toLowerCase();
+      return `<tr data-search="${esc(searchable)}" data-state="${esc(statusKey ? r[statusKey] || '' : '')}"><td class="p-2">${i + 1}</td>${ppl ? `<td class="p-2 font-mono">${r.id}</td>` : ''}${v.f.map(x => `<td class="p-2">${cell(v, r, x)}</td>`).join('')}<td class="p-2"><button aria-label="Sửa" onclick="openForm('${vk}','${r.id}')" class="text-blue-600 px-1.5"><i class="fa-solid fa-pen"></i></button><button aria-label="Xóa" onclick="del('${v.c}','${r.id}')" class="text-red-500 px-1.5"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+    }).join('') || `<tr><td colspan="12" class="p-4 text-center text-slate-400">Chưa có dữ liệu. Bấm nút thêm ở trên.</td></tr>`) + `</tbody></table></div>`;
+}
+function filterTable(vk) {
+  const q = ($('#search_' + vk)?.value || '').trim().toLowerCase();
+  const st = $('#state_' + vk)?.value || '';
+  document.querySelectorAll(`#table_${vk} tbody tr[data-search]`).forEach(tr => {
+    tr.style.display = (!q || tr.dataset.search.includes(q)) && (!st || tr.dataset.state === st) ? '' : 'none';
+  });
+}
+
+const iso = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+function insights() {
+  const P = S.people, s = stats(), cnt = (a, k) => a.reduce((m, p) => (p[k] && (m[p[k]] = (m[p[k]] || 0) + 1), m), {});
+  const days = new Set(P.filter(p => p.shoot).map(p => p.shoot)).size, avg = days ? s.ok / days : 0;
+  const l7 = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - 6 + i); const k = iso(d); return [k, P.filter(p => p.shoot === k).length]; });
+  const mx = Math.max(1, ...l7.map(x => x[1])), list = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)}: <b>${v}</b>`).join(' | ') || 'chưa có';
+  const fc = avg > 0 && s.miss > 0 ? `Tốc độ trung bình ${avg.toFixed(1)} video đạt/ngày quay (mới ${days} ngày dữ liệu, chỉ để tham khảo): cần thêm khoảng <b>${Math.ceil(s.miss / avg)}</b> ngày quay nữa.` : 'Chưa đủ dữ liệu để dự báo.';
+  return card(head('fa-chart-simple', 'Thống kê & dự báo') + `<div class="flex items-end gap-1 h-20">${l7.map(([k, n]) => `<div class="flex-1 text-center text-[10px]"><div class="bg-blue-400 rounded-t mx-1" style="height:${n / mx * 40}px"></div>${n}<div class="text-slate-400">${k.slice(8)}</div></div>`).join('')}</div><p class="text-[11px] text-slate-500">Số người quay mỗi ngày (7 ngày gần nhất)</p>
+    <div class="text-xs space-y-1"><p>${fc}</p><p><b>Lý do phải quay lại:</b> ${list(cnt(P.filter(p => p.qc === 'Cần quay lại'), 'why'))}</p><p><b>Giới tính:</b> ${list(cnt(P.filter(p => p.file), 'gender'))}</p><p><b>Nhóm tuổi:</b> ${list(cnt(P.filter(p => p.file), 'age'))}</p></div>`);
+}
+function sched() {
+  const t = today(), tm = iso(new Date(Date.now() + 864e5)), c = S.cfg, toM = x => { const [h, m] = x.split(':'); return +h * 60 + +m; }, fm = n => String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+  const day = (d, l) => {
+    const L = S.people.filter(p => p.book === d && !p.shoot).sort((a, b) => (a.slot || '99').localeCompare(b.slot || '99')), used = {};
+    L.forEach(p => p.slot && (used[p.slot] = (used[p.slot] || 0) + 1));
+    let free = ''; for (let m = toM(c.open); m < toM(c.close); m += c.step) if (!used[fm(m)]) { free = fm(m); break; }
+    return `<div class="text-xs"><b>${l} (${fd(d)})</b>, giờ trống tiếp theo: <b>${free || 'hết chỗ'}</b></div>` + (L.map(p => `<div class="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border text-xs"><b class="w-12 ${used[p.slot] > 1 ? 'text-rose-600' : ''}">${p.slot || '--:--'}</b><span class="flex-1 truncate">${esc(p.name)}${used[p.slot] > 1 ? ' (trùng giờ)' : ''}</span>${p.phone ? `<a href="tel:${esc(p.phone)}" class="px-2 text-blue-600 font-semibold">Gọi</a><button onclick="remind('${p.id}')" class="px-2 text-emerald-700 font-semibold">Nhắc Zalo</button>` : ''}</div>`).join('') || '<div class="text-slate-400 text-xs">Chưa có lịch hẹn.</div>');
+  };
+  return card(head('fa-clock', 'Lịch hẹn (1 bộ thiết bị, mỗi lượt ' + c.step + ' phút)') + day(t, 'Hôm nay') + day(tm, 'Ngày mai'));
+}
+function remind(id) {
+  const p = S.people.find(x => x.id === id), m = `Chào ${p.name}, bên mình nhắc lịch ghi hình răng miệng lúc ${p.slot || 'đã hẹn'} ngày ${fd(p.book)} tại Ngõ 53 đường Quang Tiến, Đại Mỗ, Hà Nội. Bạn nhớ đánh răng trước khi đến nhé. Cảm ơn bạn!`;
+  navigator.clipboard && navigator.clipboard.writeText(m).catch(() => {});
+  location.href = 'https://zalo.me/' + p.phone.replace(/\D/g, '');   // tin nhắc đã sao chép, chỉ cần dán vào Zalo
+}
+function parseLine(l) {
+  const ph = (l.match(/(?:\+?84|0)(?:[ .]?\d){9}/) || [''])[0]; let rest = l.replace(ph, ' ');
+  const tm = rest.match(/(\d{1,2})\s*(?:h|giờ|:)\s*(\d{2})?/i); if (tm) rest = rest.replace(tm[0], ' ');
+  return { name: rest.replace(/[-–,;|:]+/g, ' ').replace(/\s+/g, ' ').trim(), phone: ph.replace(/[^\d+]/g, ''), slot: tm ? tm[1].padStart(2, '0') + ':' + (tm[2] || '00') : '' };
+}
+function openPaste() {
+  showM(mhead('Dán danh sách đăng ký') + `<p class="text-slate-500">Mỗi dòng một người, ví dụ: Nguyễn Văn A 0901234567 14h30</p><textarea id="pt" rows="7" class="${inp}"></textarea>
+    <div class="grid grid-cols-2 gap-2"><div><label>Ngày hẹn</label><input id="pdt" type="date" value="${today()}" class="${inp}"></div><div><label>Nguồn</label><select id="ps" class="${inp}">${O.src.map(o => `<option>${o}</option>`).join('')}</select></div></div>
+    <button onclick="doPaste()" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl">Thêm vào danh sách</button>`);
+}
+function doPaste() {
+  let add = 0; const skip = [];
+  $('#pt').value.split('\n').forEach(l => {
+    if (!l.trim()) return; const r = parseLine(l); if (!r.name && !r.phone) return;
+    if (r.phone && S.people.some(p => p.phone === r.phone)) { skip.push(r.name || r.phone); return; }
+    S.people.push({ ...D, id: nextId(), name: r.name || '(chưa có tên)', phone: r.phone, slot: r.slot, book: $('#pdt').value, src: $('#ps').value, crew: S.cfg.crew }); add++;
+  });
+  if (add) logActivity('Nhập danh sách đăng ký', `Thêm ${add} người tham gia`);
+  save(); closeM(); render(); alert(`Đã thêm ${add} người.` + (skip.length ? ` Bỏ qua ${skip.length} người trùng số điện thoại: ${skip.join(', ')}.` : ''));
+}
+const pick = () => [...document.querySelectorAll('.bx:checked')].map(e => S.people.find(p => p.id === e.value));
+function openBatch() {
+  const L = S.people.filter(p => p.file && p.qc === 'Chờ duyệt'), b = 'w-full text-white font-semibold py-2.5 rounded-xl';
+  showM(mhead('Gửi và duyệt hàng loạt') + (L.map(p => `<label class="flex gap-2 p-2 bg-slate-50 rounded-xl border"><input type="checkbox" class="bx" value="${p.id}" checked><span class="flex-1 truncate">${esc(p.name)} - ${esc(p.file)}</span></label>`).join('') || '<p class="text-slate-400">Không có video chờ duyệt.</p>') +
+    `<button onclick="batchMsg()" class="${b} bg-slate-800">Sao chép tin gửi anh Phong</button><p class="text-slate-500">Tin chỉ liệt kê tên file. Chưa gửi video qua kênh nào khi chưa được duyệt.</p>
+    <div class="grid grid-cols-2 gap-2"><button onclick="batchSet('Đạt chuẩn')" class="${b} bg-emerald-600">Đánh dấu Đạt chuẩn</button><button onclick="batchSet('Cần quay lại')" class="${b} bg-rose-600">Đánh dấu Quay lại</button></div><p class="text-slate-500">Chỉ đánh dấu sau khi anh Phong trả lời.</p>`);
+}
+async function batchMsg() { const L = pick(); try { await navigator.clipboard.writeText(`Anh Phong ơi, bên em gửi anh xem ${L.length} video: ${L.map(p => p.file).join(', ')}. Anh xác nhận giúp bên em video nào đạt, video nào cần quay lại ạ. Em cảm ơn anh.`); alert('Đã sao chép tin nhắn.'); } catch (e) { alert('Không sao chép được, hãy thử lại.'); } }
+function batchSet(q) { const L = pick(); if (!L.length) return; L.forEach(p => { p.qc = q; logActivity('Cập nhật QC hàng loạt', `${p.id} - ${p.name}: ${q}`); }); save(); closeM(); render(); }
+function pickFile(el) {
+  const fl = el.files[0]; if (!fl) return; const set = (k, v) => { const e = $('#f_' + k); if (e && v) e.value = v; };
+  set('file', fl.name); set('size', (fl.size / 1048576).toFixed(1) + ' MB');
+  const g = fl.name.match(/(?:^|[_\-. ])(Nam|Nữ|Nu)(?=[_\-. ])/i), a = fl.name.match(/(\d{2}-\d{2}|\d{2}\+)/);
+  set('gender', g && g[1]); set('age', a && a[1]);
+  const v = document.createElement('video'); v.preload = 'metadata';
+  v.onloadedmetadata = () => { const s = Math.round(v.duration); set('dur', Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')); URL.revokeObjectURL(v.src); };
+  v.onerror = () => alert('Không đọc được thời lượng, hãy nhập tay.'); v.src = URL.createObjectURL(fl);
+}
+function screenForm(r) {
+  return '<div class="border-t pt-2 font-bold">Sàng lọc điều kiện</div>' + QS.map(q => `<div class="flex justify-between items-center gap-2"><label>${q[1]}</label><select id="${q[0]}" class="p-2 bg-slate-50 border rounded-xl">${O.yn.map(o => `<option ${o === (r[q[0]] || 'Chưa hỏi') ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`).join('') + '<p class="text-slate-500">Chưa có ngưỡng chính thức. "Có" hoặc "Không rõ" chỉ để đánh dấu, hỏi anh Phong hoặc chị quyết định.</p>';
+}
+function historyView() {
+  const day = $('#historyDate')?.value || today();
+  const entries = (S.activity || []).filter(x => x.date === day);
+  const people = S.people.filter(p => p.shoot === day);
+  const taskCreated = S.tasks.filter(t => t.createdDate === day);
+  const timeline = entries.map(x => `<div class="border-l-2 border-blue-200 pl-3 pb-3 relative"><span class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-blue-500"></span><div class="flex justify-between gap-2"><b class="text-xs">${esc(x.action)}</b><span class="text-[10px] text-slate-400">${new Date(x.at).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span></div><p class="text-xs text-slate-600 mt-1">${esc(x.detail)}</p></div>`).join('') || '<p class="text-xs text-slate-400">Chưa có hoạt động nào được ghi nhận trong ngày này. Nhật ký chỉ bắt đầu từ khi phiên bản này được cập nhật.</p>';
+  return card(head('fa-calendar-day','Tra cứu theo ngày') + `<input id="historyDate" type="date" value="${day}" onchange="render()" class="w-full p-2 border rounded-xl text-xs"><div class="grid grid-cols-3 gap-2 text-center"><div class="bg-slate-50 rounded-xl p-2"><b class="text-lg">${people.length}</b><p class="text-[10px] text-slate-500">Video ghi ngày này</p></div><div class="bg-slate-50 rounded-xl p-2"><b class="text-lg">${entries.length}</b><p class="text-[10px] text-slate-500">Thao tác lưu lại</p></div><div class="bg-slate-50 rounded-xl p-2"><b class="text-lg">${taskCreated.length}</b><p class="text-[10px] text-slate-500">Task tạo mới</p></div></div><button onclick="openReportFor('${day}')" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-semibold"><i class="fa-solid fa-file-lines"></i> Tạo báo cáo ngày này</button>`) + card(head('fa-clock-rotate-left',`Nhật ký hoạt động – ${fd(day)}`) + `<div class="space-y-1">${timeline}</div>`);
+}
+
+function dashboard() {
+  const s = stats(), al = alerts();
+  const mini = (n, l) => `<div class="bg-white/10 rounded-xl p-2 text-center"><div class="text-lg font-bold">${n}</div><div class="text-[11px] text-blue-100">${l}</div></div>`;
+  const top = `<div class="bg-gradient-to-br from-blue-900 to-blue-700 text-white p-4 rounded-2xl shadow-md space-y-3">
+    <div class="flex justify-between items-baseline"><span class="text-xs text-blue-200">Video đạt chuẩn / mục tiêu</span><span class="text-xs bg-blue-500 px-2 py-0.5 rounded-full font-bold">${s.pct.toFixed(1)}%</span></div>
+    <div class="flex items-baseline gap-2"><span class="text-3xl font-black">${s.ok}</span><span class="text-sm text-blue-200">/ ${S.cfg.target}</span></div>
+    <div class="w-full bg-blue-950/50 h-2 rounded-full overflow-hidden"><div class="bg-emerald-400 h-2 rounded-full" style="width:${s.pct}%"></div></div>
+    <div class="grid grid-cols-3 gap-2">${mini(s.reg, 'Đăng ký')}${mini(s.shot, 'Đã quay')}${mini(s.wait, 'Chờ duyệt')}${mini(s.redo, 'Quay lại')}${mini(s.rate == null ? '-' : Math.round(s.rate * 100) + '%', 'Tỷ lệ đạt')}${mini(s.extra == null ? '-' : s.extra, 'Cần quay thêm')}</div></div>`;
+  const alHtml = al.length ? al.map(x => `<button onclick="${x.to === 'bk' ? 'openSettings()' : `go(${x.to})`}" class="w-full text-left p-2.5 rounded-xl border flex gap-2 ${x.lvl === 'r' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-900'}"><i class="fa-solid ${x.lvl === 'r' ? 'fa-circle-exclamation' : 'fa-bell'} mt-0.5"></i><span>${esc(x.txt)}</span></button>`).join('')
+    : '<div class="text-slate-400 text-xs">Không có việc tồn đọng.</div>';
+  const tasks = S.tasks.map(t => `<div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border"><label class="flex items-start gap-2 flex-1"><input type="checkbox" ${t.done ? 'checked' : ''} onchange="tog('${t.id}')" class="mt-0.5"><span class="${t.done ? 'line-through text-slate-400' : ''}">${esc(t.t)}${t.auto ? ' <span class="text-[10px] text-blue-600">(Tự động từ rủi ro)</span>' : ''}</span></label><button aria-label="Xóa việc" onclick="del('tasks','${t.id}')" class="text-slate-400 px-1"><i class="fa-solid fa-trash"></i></button></div>`).join('');
+  return top +
+    card(head('fa-bell', 'Việc cần chú ý (tự động)') + `<div class="space-y-2 text-xs">${alHtml}</div>`) + insights() +
+    card(head('fa-calendar-day', 'Việc của tôi hôm nay') + `<div class="flex gap-2"><input id="ti" onkeydown="if(event.key==='Enter')addTask()" placeholder="Nhập việc cần làm..." class="flex-1 p-2 bg-slate-50 border rounded-xl text-xs"><button onclick="addTask()" class="bg-blue-600 text-white px-3 rounded-xl text-xs font-semibold">Thêm</button></div><div class="space-y-2 text-xs">${tasks}</div>
+      <div class="grid grid-cols-2 gap-2"><button onclick="openReport()" class="bg-emerald-600 text-white font-semibold py-2.5 rounded-xl text-xs"><i class="fa-solid fa-file-lines"></i> Báo cáo cuối ngày</button><button onclick="exportReportCSV()" class="bg-slate-800 text-white font-semibold py-2.5 rounded-xl text-xs"><i class="fa-solid fa-file-csv"></i> Xuất Excel / CSV</button></div>`);
+}
+function render() {
+  if (!AUTH || !AUTH.session) {
+    $('#accountActions').style.display = 'none';
+    $('#nav').innerHTML = '';
+    $('#names').innerHTML = '';
+    $('#app').innerHTML = authView();
+    return;
+  }
+  $('#accountActions').style.display = 'flex';
+  $('#nav').innerHTML = `<div class="max-w-md md:max-w-6xl mx-auto grid grid-cols-6 h-14">${TABS.map((t, i) => `<button onclick="go(${i})" class="flex flex-col items-center justify-center ${i === tab ? 'text-blue-600 font-bold' : 'text-slate-400'}"><i class="fa-solid ${t[0]} text-base"></i><span class="text-[10px] mt-0.5">${t[1]}</span></button>`).join('')}</div>`;
+  $('#names').innerHTML = S.people.map(p => `<option value="${esc(p.name)}">`).join('');
+  $('#app').innerHTML = [
+    dashboard,
+    () => sched() + card(head('fa-users', 'Người tham gia', `<div class="flex gap-1">${addBtn('p', 'Thêm')}<button onclick="openPaste()" class="text-[11px] bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-full border">Dán danh sách</button></div>`) + tbl('p')),
+    () => card(head('fa-video', 'Video & kết quả QC', `<div class="flex gap-1">${addBtn('v', 'Thêm')}<button onclick="openBatch()" class="text-[11px] bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-full border">Duyệt hàng loạt</button></div>`) + `<p class="text-[11px] text-slate-500">Kết quả QC do anh Phong (Panasonic) xác nhận. Chạm vào nhãn màu để đổi trạng thái.</p>` + tbl('v')),
+    () => card(head('fa-cloud-arrow-up', 'Upload server') + tbl('u')) + card(head('fa-tags', 'Gán nhãn & nghiệm thu') + tbl('l')),
+    () => card(head('fa-microchip', 'Thiết bị', addBtn('d', 'Thêm thiết bị')) + tbl('d')) + card(head('fa-triangle-exclamation', 'Vấn đề & rủi ro', addBtn('r', 'Thêm vấn đề')) + tbl('r')),
+    historyView
+  ][tab]();
+}
+function go(i) { tab = i; render(); scrollTo(0, 0); }
+
+/* ============ THAO TÁC ============ */
+function del(c, id) { if (!confirm('Xóa dòng này?')) return; const old = S[c].find(r => r.id === id); logActivity('Xóa dữ liệu', `${c}: ${old?.name || old?.title || old?.code || old?.t || id}`); S[c] = S[c].filter(r => r.id !== id); save(); render(); }
+function cyc(c, id, k, o) {
+  const r = S[c].find(x => x.id === id), op = O[o], nx = op[(op.indexOf(r[k]) + 1) % op.length];
+  if (k === 'paid' && nx === 'Đã chi' && r.qc !== 'Đạt chuẩn' && !confirm('Video này chưa được Panasonic xác nhận đạt. Vẫn ghi là đã chi?')) return;
+  const oldValue = r[k]; r[k] = nx;
+  logActivity('Cập nhật trạng thái', `${r.name || r.title || r.code || r.id}: ${k} đổi từ ${oldValue || 'trống'} thành ${nx}`);
+  if (k === 'up' && nx === 'Đã upload' && !r.upd) r.upd = today();
+  save(); render();
+}
+function addTask() { const el = $('#ti'), t = el.value.trim(); if (!t) return; S.tasks.push({ id: uid(), t, done: false, createdDate: today() }); logActivity('Tạo công việc', t); save(); render(); }
+function tog(id) { const t = S.tasks.find(x => x.id === id); t.done = !t.done; logActivity(t.done ? 'Hoàn thành công việc' : 'Mở lại công việc', t.t); save(); render(); }
+
+function showM(html) { $('#mb').innerHTML = html; $('#m').style.display = 'flex'; }
+function closeM() { $('#m').style.display = 'none'; }
+const inp = 'w-full mt-1 p-2 bg-slate-50 border rounded-xl';
+const mhead = t => `<div class="flex justify-between items-center font-bold text-sm"><h3>${t}</h3><button onclick="closeM()" aria-label="Đóng"><i class="fa-solid fa-xmark"></i></button></div>`;
+
+function authView() {
+  const hasAccount = !!AUTH;
+  const fields = hasAccount
+    ? `<div><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="username" value="${esc(AUTH.email)}" class="${inp}"></div>
+       <div><label for="authPassword">Mật khẩu</label><div class="flex gap-2"><input id="authPassword" type="password" autocomplete="current-password" class="${inp} min-w-0 flex-1"><button type="button" onclick="togglePassword('authPassword',this)" aria-label="Hiện mật khẩu" class="px-3 mt-1 border rounded-xl"><i class="fa-solid fa-eye"></i></button></div></div>
+       <button onclick="loginLocalAccount()" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl">Đăng nhập</button>`
+    : `<div><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="username" class="${inp}"></div>
+       <div><label for="authPassword">Mật khẩu (ít nhất 8 ký tự)</label><div class="flex gap-2"><input id="authPassword" type="password" autocomplete="new-password" class="${inp} min-w-0 flex-1"><button type="button" onclick="togglePassword('authPassword',this)" aria-label="Hiện mật khẩu" class="px-3 mt-1 border rounded-xl"><i class="fa-solid fa-eye"></i></button></div></div>
+       <div><label for="authConfirm">Nhập lại mật khẩu</label><div class="flex gap-2"><input id="authConfirm" type="password" autocomplete="new-password" class="${inp} min-w-0 flex-1"><button type="button" onclick="togglePassword('authConfirm',this)" aria-label="Hiện mật khẩu" class="px-3 mt-1 border rounded-xl"><i class="fa-solid fa-eye"></i></button></div></div>
+       <button onclick="registerLocalAccount()" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl">Đăng ký và bắt đầu</button>`;
+  return `<div class="min-h-[70vh] flex items-center justify-center"><section class="w-full max-w-sm bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+    <div><span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded-full">PRDCV Control Center</span><h2 class="text-lg font-bold mt-3">${hasAccount ? 'Đăng nhập' : 'Tạo tài khoản trên thiết bị này'}</h2><p class="text-xs text-slate-500 mt-1">Email được ghi nhớ trên thiết bị này. Mỗi lần mở ứng dụng, bạn cần đăng nhập lại.</p></div>
+    ${fields}
+    <p class="text-[10px] text-amber-700 bg-amber-50 rounded-xl p-3">Đây là khóa giao diện cục bộ, không phải xác thực máy chủ. Dữ liệu vẫn nằm trong trình duyệt này; người có quyền truy cập thiết bị hoặc công cụ nhà phát triển có thể xem dữ liệu.</p>
+  </section></div>`;
+}
+function togglePassword(id, button) {
+  const input = $('#' + id), show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  button.setAttribute('aria-label', show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu');
+  button.innerHTML = `<i class="fa-solid ${show ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
+}
+function passwordBytes(password, salt) {
+  if (!window.crypto || !crypto.subtle) throw new Error('Trình duyệt không hỗ trợ mã hóa mật khẩu an toàn. Hãy mở trang qua HTTPS hoặc localhost.');
+  const saltBytes = salt ? Uint8Array.from(atob(salt), c => c.charCodeAt(0)) : crypto.getRandomValues(new Uint8Array(16));
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+    .then(key => crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 210000, hash: 'SHA-256' }, key, 256))
+    .then(bits => ({ salt: btoa(String.fromCharCode(...saltBytes)), hash: btoa(String.fromCharCode(...new Uint8Array(bits))) }));
+}
+async function registerLocalAccount() {
+  const email = $('#authEmail').value.trim().toLowerCase(), password = $('#authPassword').value, confirmPassword = $('#authConfirm').value;
+  if (!$('#authEmail').checkValidity() || !email) { alert('Hãy nhập email hợp lệ.'); return; }
+  if (password.length < 8) { alert('Mật khẩu cần có ít nhất 8 ký tự.'); return; }
+  if (password !== confirmPassword) { alert('Mật khẩu nhập lại không khớp.'); return; }
+  if (AUTH) { alert('Thiết bị này đã có tài khoản.'); return; }
+  try {
+    const credential = await passwordBytes(password);
+    const auth = { version: 1, email, ...credential, session: true };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+    AUTH = auth; render();
+  } catch (e) { alert(e.message || 'Không thể tạo tài khoản trên thiết bị này.'); }
+}
+async function loginLocalAccount() {
+  const email = $('#authEmail').value.trim().toLowerCase(), password = $('#authPassword').value;
+  if (email !== AUTH.email.toLowerCase() || !password) { alert('Email hoặc mật khẩu không đúng.'); return; }
+  try {
+    const result = await passwordBytes(password, AUTH.salt);
+    if (result.hash !== AUTH.hash) { alert('Email hoặc mật khẩu không đúng.'); return; }
+    const auth = { ...AUTH, session: true };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+    AUTH = auth; render();
+  } catch (e) { alert(e.message || 'Không thể đăng nhập trên thiết bị này.'); }
+}
+function logoutLocalAccount() {
+  const auth = { ...AUTH, session: false };
+  try {
+    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+    AUTH = auth; closeM(); render();
+  } catch (e) { alert('Không thể đăng xuất do trình duyệt không cho phép lưu dữ liệu.'); }
+}
+
+function openForm(vk, id) {
+  const v = V[vk], r = id ? S[v.c].find(x => x.id === id) : { ...D, crew: S.cfg.crew, book: vk === 'p' ? today() : '', shoot: vk === 'v' ? today() : '', upd: vk === 'u' ? today() : '' };
+  const fields = (vk === 'v' ? `<div><label>Chọn file video để tự điền thông tin</label><input type="file" accept="video/*" onchange="pickFile(this)" class="${inp}"></div>` : '') + v.f.filter(x => x.t !== 'calc').map(x => {
+    const val = r[x.k] || '', id_ = 'f_' + x.k;
+    const el = x.t === 'sel' ? `<select id="${id_}" class="${inp}">${O[x.o].map(o => `<option ${o === val ? 'selected' : ''}>${o}</option>`).join('')}</select>`
+      : `<input id="${id_}" type="${x.t}" value="${esc(val)}" ${x.k === 'name' ? 'list="names"' : ''} class="${inp}">`;
+    return `<div><label>${x.l}</label>${el}</div>`;
+  }).join('');
+  showM(mhead(id ? 'Sửa thông tin' : 'Thêm mới') + fields + (vk === 'p' ? screenForm(r) : '') + `<button onclick="saveForm('${vk}','${id || ''}')" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl">Lưu</button>`);
+}
+function saveForm(vk, id) {
+  const v = V[vk], data = {};
+  v.f.filter(x => x.t !== 'calc').forEach(x => data[x.k] = $('#f_' + x.k).value.trim());
+  if (vk === 'p') QS.forEach(q => data[q[0]] = $('#' + q[0]).value);
+  const key = v.f[0].k;
+  if (!data[key]) { alert('Hãy nhập ' + v.f[0].l.toLowerCase() + '.'); return; }
+  let r = id ? S[v.c].find(x => x.id === id) : null;
+  if (!r && v.c === 'people') r = S.people.find(p => p.name.toLowerCase() === data.name.toLowerCase());   // trùng tên -> cập nhật, không tạo bản sao
+  const isNew = !r;
+  if (!r) { r = { ...D, id: v.c === 'people' ? nextId() : uid() }; S[v.c].push(r); }
+  Object.assign(r, data);
+  if (r.file && !r.shoot) r.shoot = today();     // có file video thì tự điền ngày quay
+  const label = r.name || r.title || r.code || r.id;
+  logActivity(isNew ? 'Thêm dữ liệu' : 'Cập nhật dữ liệu', `${label}${vk === 'r' ? ` | Mức độ: ${r.lv} | Trạng thái: ${r.rs}` : ''}`);
+  if (vk === 'r' && r.rs === 'Đã giải quyết') {
+    S.tasks.filter(t => t.riskId === r.id && !t.done).forEach(t => { t.done = true; logActivity('Đóng task theo rủi ro', t.t); });
+  }
+  if (vk === 'r' && r.lv === 'Cao' && r.rs !== 'Đã giải quyết') {
+    const taskText = `[Cần làm] ${r.title}`;
+    let task = S.tasks.find(t => t.riskId === r.id && !t.done);
+    if (!task) { task = { id: uid(), t: taskText, done: false, auto: true, riskId: r.id, createdDate: today() }; S.tasks.push(task); logActivity('Tự tạo task từ rủi ro', taskText); }
+    else { task.t = taskText; }
+  }
+  save(); closeM(); render();
+}
+
+function openReport() { openReportFor(today()); }
+function openReportFor(day) {
+  const can = S.cfg.token && S.cfg.chat;
+  showM(mhead('Báo cáo ngày ' + fd(day) + ' (tự tạo từ dữ liệu)') + `<textarea id="rp" rows="12" class="${inp} font-mono">${esc(report(day))}</textarea>
+    <div class="grid grid-cols-2 gap-2"><button onclick="copyRp()" class="bg-slate-800 text-white font-semibold py-2.5 rounded-xl">Sao chép</button>
+    <button onclick="sendRp()" ${can ? '' : 'disabled'} class="bg-emerald-600 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-xl">Gửi Telegram</button></div>
+    ${can ? '' : '<p class="text-slate-500">Muốn gửi Telegram: bấm bánh răng và nhập Bot Token, Chat ID. Báo cáo chỉ gồm số liệu tổng hợp, không có tên người tham gia.</p>'}`);
+}
+async function copyRp() { try { await navigator.clipboard.writeText($('#rp').value); alert('Đã sao chép báo cáo.'); } catch (e) { $('#rp').select(); alert('Hãy bấm giữ để sao chép thủ công.'); } }
+async function sendRp() {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${S.cfg.token}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: S.cfg.chat, text: $('#rp').value }) });
+    const j = await res.json();
+    alert(j.ok ? 'Đã gửi báo cáo qua Telegram.' : 'Telegram từ chối: ' + (j.description || 'không rõ lý do'));
+  } catch (e) { alert('Không gửi được. Kiểm tra mạng, Bot Token và Chat ID.'); }
+}
+
+function openSettings() {
+  if (!AUTH || !AUTH.session) return;
+  const c = S.cfg, row = (id, l, v, t = 'text') => `<div><label>${l}</label><input id="${id}" type="${t}" value="${esc(v)}" class="${inp}"></div>`;
+  showM(mhead('Cài đặt & sao lưu') + `<div class="flex items-center justify-between gap-2 p-2 bg-slate-50 rounded-xl"><span>Đăng nhập: ${esc(AUTH.email)}</span><button onclick="logoutLocalAccount()" class="text-red-600 font-semibold">Đăng xuất</button></div>` + row('c_target', 'Mục tiêu số video đạt', c.target, 'number') + row('c_sup', 'Hỗ trợ mỗi người (đ)', c.support, 'number') + row('c_crew', 'Tên người phụ trách mặc định', c.crew) + row('c_open', 'Giờ bắt đầu nhận lịch', c.open, 'time') + row('c_close', 'Giờ kết thúc nhận lịch (tự đặt, chưa có thông tin chính thức)', c.close, 'time') + row('c_step', 'Mỗi lượt cách nhau (phút)', c.step, 'number') +
+    row('c_tok', 'Telegram Bot Token', c.token) + row('c_chat', 'Telegram Chat ID', c.chat) +
+    `<button onclick="saveCfg()" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl">Lưu cài đặt</button>
+    <div class="border-t pt-3 space-y-2"><p class="font-bold">Sao lưu dữ liệu</p><p class="text-slate-500">Dữ liệu chỉ nằm trong trình duyệt này. Xuất file sao lưu đều đặn, và dùng file này để chuyển sang máy khác.</p>
+    <button onclick="exportReportCSV()" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-semibold">Xuất báo cáo Excel / CSV</button><div class="grid grid-cols-2 gap-2"><button onclick="exportData()" class="bg-slate-800 text-white py-2.5 rounded-xl font-semibold">Xuất sao lưu</button>
+    <label class="bg-slate-100 text-center py-2.5 rounded-xl font-semibold cursor-pointer">Nhập sao lưu<input type="file" accept=".json" class="hidden" onchange="importData(this.files[0])"></label></div>
+    <button onclick="resetAll()" class="w-full text-red-600 py-2 font-semibold">Xóa toàn bộ dữ liệu</button></div>`);
+}
+function saveCfg() {
+  const c = S.cfg;
+  c.target = +$('#c_target').value || 200; c.support = +$('#c_sup').value || 0; c.crew = $('#c_crew').value.trim(); c.open = $('#c_open').value || '10:00'; c.close = $('#c_close').value || '17:00'; c.step = +$('#c_step').value || 15;
+  c.token = $('#c_tok').value.trim(); c.chat = $('#c_chat').value.trim();
+  save(); closeM(); render();
+}
+function csvCell(v) { const x = String(v == null ? '' : v).replace(/\r?\n/g, ' '); return '"' + x.replace(/"/g, '""') + '"'; }
+function exportReportCSV() {
+  const rows = [['Loại bản ghi','Mã ID','Họ tên / Tên mục','SĐT','Ngày hẹn','Ngày quay','Tên file','Camera','QC','Upload','Gán nhãn','Nghiệm thu','Hỗ trợ','Mức độ','Trạng thái','Nội dung / Ghi chú','Thời điểm nhật ký']];
+  S.people.forEach(p => rows.push(['Người/Video',p.id,p.name,p.phone,fd(p.book),fd(p.shoot),p.file,p.cam,p.qc,p.up,p.ls,p.ac,p.paid,'','','Nguồn: '+(p.src||'')+'; Phụ trách: '+(p.crew||''),'']));
+  S.devices.forEach(d => rows.push(['Thiết bị',d.id,d.name,'','','','','','','','','','', '',d.st,`${d.code} | ${d.note||''}`,'']));
+  S.risks.forEach(r => rows.push(['Rủi ro',r.id,r.title,'','','','','','','','','','',r.lv,r.rs,r.sol||'','']));
+  S.tasks.forEach(t => rows.push(['Công việc',t.id,t.t,'','','','','','','','','','','',t.done?'Hoàn thành':'Chưa hoàn thành',t.auto?'Tự động từ rủi ro':'Tạo thủ công','']));
+  (S.activity||[]).forEach(a => rows.push(['Nhật ký',a.id,'','','','','','','','','','','','','',`${a.action}: ${a.detail}`,new Date(a.at).toLocaleString('vi-VN')]));
+  const csv = '\ufeff' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8;'}));
+  const a = document.createElement('a'); a.href = url; a.download = `PRDCV-bao-cao-${today()}.csv`; a.click(); URL.revokeObjectURL(url);
+  logActivity('Xuất báo cáo CSV', `Xuất dữ liệu tổng hợp ${rows.length-1} dòng`); save();
+}
+
+function exportData() {
+  S.backup = Date.now(); save();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S)], { type: 'application/json' }));
+  a.download = `prdcv-sao-luu-${today()}.json`; a.click(); render();
+}
+function importData(file) {
+  if (!file) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { const d = JSON.parse(rd.result); if (!Array.isArray(d.people)) throw 0; if (!confirm('Thay toàn bộ dữ liệu hiện tại bằng file này?')) return; S = { ...seed(), ...d }; save(); closeM(); render(); }
+    catch (e) { alert('File không đúng định dạng sao lưu của hệ thống.'); }
+  };
+  rd.readAsText(file);
+}
+function resetAll() { if (confirm('Xóa TOÀN BỘ dữ liệu? Không thể hoàn tác.') && confirm('Chắc chắn xóa?')) { S = seed(); S.activity = []; save(); closeM(); render(); } }
+
+(() => { const c = document.createElement('canvas'); c.width = c.height = 180; const x = c.getContext('2d'); x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 180); x.fillStyle = '#fff'; x.font = 'bold 100px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('P', 90, 98); const l = document.createElement('link'); l.rel = 'apple-touch-icon'; l.href = c.toDataURL(); document.head.appendChild(l); })();
+render();
+</script>
+</body>
+</html>
