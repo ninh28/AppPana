@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'prdcv-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v7`;
+const CACHE_NAME = `${CACHE_PREFIX}v8`;
 const SHELL_FILES = [
   './',
   './index.html',

@@ -94,3 +94,26 @@ test('deleting a legacy video clears only video fields', () => {
   assert.equal(vm.runInContext('S.people[0].name', app.context), 'Legacy');
   assert.equal(vm.runInContext("'file' in S.people[0]", app.context), false);
 });
+
+test('people list shows everyone by default and filters when a date is selected', () => {
+  const app = startApp();
+  vm.runInContext(`
+    S.people = [
+      { id: 'P1', name: 'Today', book: '2026-11-25', videoLog: [{ id: 'v1', shoot: '2026-11-25' }] },
+      { id: 'P2', name: 'Earlier', book: '2026-11-24', videoLog: [{ id: 'v2', shoot: '2026-11-24' }] }
+    ];
+    collectionDay = '';
+  `, app.context);
+  const tableRows = table => [...table.matchAll(/<tr[^>]*data-date-match="([01])"[^>]*data-record-id="([^"]+)"/g)]
+    .map(match => ({ dataset: { dateMatch: match[1], recordId: match[2], search: '', state: '' }, style: {} }));
+  const allRows = tableRows(vm.runInContext("tbl('p')", app.context));
+  app.context.testRows = allRows;
+  vm.runInContext("document.querySelectorAll = () => testRows; filterTable('p')", app.context);
+  assert.deepEqual(allRows.map(row => row.style.display), ['', '']);
+
+  vm.runInContext("setCollectionDay('2026-11-25')", app.context);
+  const filteredRows = tableRows(vm.runInContext("tbl('p')", app.context));
+  app.context.testRows = filteredRows;
+  vm.runInContext("document.querySelectorAll = () => testRows; filterTable('p')", app.context);
+  assert.deepEqual(filteredRows.map(row => row.style.display), ['', 'none']);
+});
