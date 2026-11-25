@@ -107,7 +107,40 @@ const seed = () => ({
   undoStack: []
 });
 
-const load = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } };
+let storageMode = 'local';
+const memoryStorage = new Map();
+function readStoredValue(key) {
+  if (storageMode === 'memory') return memoryStorage.get(key) || null;
+  try {
+    const storage = storageMode === 'session' ? window.sessionStorage : window.localStorage;
+    return storage.getItem(key);
+  } catch (error) {
+    storageMode = storageMode === 'local' ? 'session' : 'memory';
+    return readStoredValue(key);
+  }
+}
+function writeStoredValue(key, value) {
+  const serialized = String(value);
+  if (storageMode === 'local') {
+    try {
+      window.localStorage.setItem(key, serialized);
+      return true;
+    } catch (error) {
+      storageMode = 'session';
+    }
+  }
+  if (storageMode === 'session') {
+    try {
+      window.sessionStorage.setItem(key, serialized);
+      return false;
+    } catch (error) {
+      storageMode = 'memory';
+    }
+  }
+  memoryStorage.set(key, serialized);
+  return false;
+}
+const load = () => { try { return JSON.parse(readStoredValue(KEY)); } catch (e) { return null; } };
 let S = load();
 let AUTH = loadAuth();
 if (AUTH) AUTH.session = false;
@@ -115,26 +148,19 @@ let migratedOnLoad = false;
 if (!S) { S = seed(); migratedOnLoad = migrate(true); save(); }
 else { migratedOnLoad = migrate(false); if (migratedOnLoad) save(); }
 let tab = 0;
-let collectionDay = today();
+let collectionDay = '';
 let pendingImport = null;
 let pendingVideoMetadata = Promise.resolve();
 
 function save() {
-  const previous = S.savedAt;
   S.savedAt = new Date().toISOString();
-  try {
-    localStorage.setItem(KEY, JSON.stringify(S));
-    updateSaveStatus();
-    return true;
-  } catch (e) {
-    S.savedAt = previous;
-    alert('Không lưu được dữ liệu trên trình duyệt này. Hãy xuất sao lưu ngay.');
-    return false;
-  }
+  writeStoredValue(KEY, JSON.stringify(S));
+  updateSaveStatus();
+  return true;
 }
 function loadAuth() {
   try {
-    const auth = JSON.parse(localStorage.getItem(AUTH_KEY));
+    const auth = JSON.parse(readStoredValue(AUTH_KEY));
     return auth && auth.version === 1 && auth.email && auth.salt && auth.hash ? auth : null;
   } catch (e) {
     alert('Không đọc được thông tin đăng nhập cục bộ. Hãy kiểm tra dữ liệu trình duyệt.');
@@ -150,12 +176,21 @@ function updateSaveStatus() {
   const el = document.getElementById('saveStatus');
   if (!el) return;
   const saved = S.savedAt ? new Date(S.savedAt) : null;
-  el.textContent = saved && !Number.isNaN(saved.getTime())
+  el.textContent = storageMode === 'session'
+    ? 'Lưu tạm trong phiên trình duyệt'
+    : storageMode === 'memory'
+      ? 'Lưu tạm đến khi tải lại trang'
+      : saved && !Number.isNaN(saved.getTime())
     ? `Đã lưu lúc ${saved.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
     : 'Chưa lưu';
 }
 function showSaveDetails() {
-  showM(mhead('Lưu trữ trên thiết bị') + '<p>Dữ liệu chỉ được lưu trong trình duyệt này, trên khóa prdcv2. Không có đồng bộ máy chủ.</p>');
+  const detail = storageMode === 'session'
+    ? 'Trình duyệt chặn lưu trữ lâu dài. Dữ liệu đang lưu trong phiên hiện tại và có thể mất khi đóng tab hoặc cửa sổ riêng tư. Hãy xuất sao lưu để giữ dữ liệu.'
+    : storageMode === 'memory'
+      ? 'Trình duyệt chặn cả localStorage và sessionStorage. Dữ liệu chỉ nằm trong bộ nhớ trang hiện tại, sẽ mất khi tải lại hoặc đóng trang. Hãy xuất sao lưu ngay.'
+      : 'Dữ liệu chỉ được lưu trong trình duyệt này, trên khóa prdcv2. Ở chế độ ẩn danh, dữ liệu có thể bị xóa khi đóng phiên. Hãy xuất sao lưu để giữ dữ liệu.';
+  showM(mhead('Lưu trữ trên thiết bị') + `<p>${detail}</p>`);
 }
 
 function ensureLocalRecordMetadata() {
@@ -237,7 +272,7 @@ function migrate(importLegacy) {
   if (!Object.prototype.hasOwnProperty.call(S, 'savedAt')) { S.savedAt = ''; changed = true; }
   changed = ensureLocalRecordMetadata() || changed;
 
-  const old = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+  const old = k => { try { return JSON.parse(readStoredValue(k)); } catch (e) { return null; } };
   const iso = d => { const m = String(d || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : ''; };
   const find = n => S.people.find(p => p.name.toLowerCase() === String(n).trim().toLowerCase());
   if (importLegacy) {
@@ -926,8 +961,31 @@ function selectSuggestions() {
   });
 }
 function videoHistoryView() {
-  const rows = allVideoRecords().map(({ person, video }) => `<tr class="border-b"><td class="p-2">${esc(person.id)} · ${esc(person.name)}</td><td class="p-2 break-all">${esc(video.file || '')}</td><td class="p-2">${esc(fd(video.shoot || ''))}</td><td class="p-2">${esc(video.dur || '-')} · ${esc(video.size || '-')}</td><td class="p-2"><button onclick="cycleVideoLogFrom(this)" data-person="${esc(person.id)}" data-video="${esc(video.id)}" data-key="qc" class="px-2 py-1 rounded ${chipCls(video.qc || 'Chờ duyệt')}">${esc(video.qc || 'Chờ duyệt')}</button></td><td class="p-2"><button onclick="cycleVideoLogFrom(this)" data-person="${esc(person.id)}" data-video="${esc(video.id)}" data-key="up" class="px-2 py-1 rounded ${chipCls(video.up || 'Chưa upload')}">${esc(video.up || 'Chưa upload')}</button></td></tr>`).join('');
-  return card(head('fa-film', `Sổ video (${allVideoRecords().length})`) + `<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-left text-slate-500"><th class="p-2">Người</th><th class="p-2">Tên file</th><th class="p-2">Ngày quay</th><th class="p-2">Thời lượng · dung lượng</th><th class="p-2">QC</th><th class="p-2">Upload</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="p-3 text-slate-400">Chưa có video.</td></tr>'}</tbody></table></div>`);
+  const rows = allVideoRecords().map(({ person, video }) => `<tr class="border-b"><td class="p-2">${esc(person.id)} · ${esc(person.name)}</td><td class="p-2 break-all">${esc(video.file || '')}</td><td class="p-2">${esc(fd(video.shoot || ''))}</td><td class="p-2">${esc(video.dur || '-')} · ${esc(video.size || '-')}</td><td class="p-2"><button onclick="cycleVideoLogFrom(this)" data-person="${esc(person.id)}" data-video="${esc(video.id)}" data-key="qc" class="px-2 py-1 rounded ${chipCls(video.qc || 'Chờ duyệt')}">${esc(video.qc || 'Chờ duyệt')}</button></td><td class="p-2"><button onclick="cycleVideoLogFrom(this)" data-person="${esc(person.id)}" data-video="${esc(video.id)}" data-key="up" class="px-2 py-1 rounded ${chipCls(video.up || 'Chưa upload')}">${esc(video.up || 'Chưa upload')}</button></td><td class="p-2"><button onclick="deleteVideoFrom(this)" data-person="${esc(person.id)}" data-video="${esc(video.id)}" aria-label="Xóa video khỏi sổ" title="Xóa video khỏi sổ" class="text-rose-600 hover:text-rose-800 px-2 py-1"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('');
+  return card(head('fa-film', `Sổ video (${allVideoRecords().length})`) + `<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-left text-slate-500"><th class="p-2">Người</th><th class="p-2">Tên file</th><th class="p-2">Ngày quay</th><th class="p-2">Thời lượng · dung lượng</th><th class="p-2">QC</th><th class="p-2">Upload</th><th class="p-2">Thao tác</th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="p-3 text-slate-400">Chưa có video.</td></tr>'}</tbody></table></div>`);
+}
+function deleteVideoFrom(button) {
+  const person = S.people.find(item => item.id === button.dataset.person);
+  const video = person && videoRecords(person).find(item => item.id === button.dataset.video);
+  if (!person || !video) return;
+  const locked = video.shoot && isDayLocked(video.shoot) ? video.shoot : lockedDayForRecord(person, 'people');
+  if (rejectLockedDay(locked)) return;
+  if (!confirm(`Xóa video "${video.file || 'không tên'}" của ${person.name || person.id} khỏi Sổ video? Tệp gốc trên thiết bị không bị xóa.`)) return;
+
+  recordUndo('people', person, `Xóa video ${video.file || video.id} của ${person.name || person.id}`);
+  const hasSavedVideo = Array.isArray(person.videoLog) && person.videoLog.some(item => item.id === video.id);
+  person.videoLog = (Array.isArray(person.videoLog) ? person.videoLog : []).filter(item => item.id !== video.id);
+  if (!hasSavedVideo || person.activeVideoId === video.id) {
+    const activeVideo = person.videoLog.find(item => item.id === person.activeVideoId) || person.videoLog[person.videoLog.length - 1];
+    person.activeVideoId = activeVideo ? activeVideo.id : '';
+    const fields = ['file', 'size', 'dur', 'gender', 'age', 'cam', 'qc', 'up', 'why', 'shoot', 'startAt'];
+    if (activeVideo) fields.forEach(key => { person[key] = activeVideo[key] || ''; });
+    else fields.forEach(key => { delete person[key]; });
+    delete person.upd;
+  }
+  person.updatedAt = new Date().toISOString();
+  logActivity('Xóa video khỏi sổ', `${person.id} - ${video.file || video.id}`);
+  save(); render();
 }
 function cycleVideoLogFrom(button) {
   const person = S.people.find(item => item.id === button.dataset.person);
@@ -1222,6 +1280,7 @@ function openNotificationFrom(button) {
   go(Number(item.to));
 }
 function render() {
+  if (!collectionDay) collectionDay = today();
   if (!AUTH || !AUTH.session) {
     $('#accountActions').style.display = 'none';
     $('#nav').innerHTML = '';
@@ -1336,7 +1395,7 @@ function authView() {
   return `<div class="min-h-[70vh] flex items-center justify-center"><section class="w-full max-w-sm bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
     <div><span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded-full">PRDCV Control Center</span><h2 class="text-lg font-bold mt-3">${hasAccount ? 'Đăng nhập' : 'Tạo tài khoản trên thiết bị này'}</h2><p class="text-xs text-slate-500 mt-1">Email được ghi nhớ trên thiết bị này. Mỗi lần mở ứng dụng, bạn cần đăng nhập lại.</p></div>
     ${fields}
-    <p class="text-[10px] text-amber-700 bg-amber-50 rounded-xl p-3">Dữ liệu chỉ nằm trong trình duyệt này; đây là khóa giao diện cục bộ, không phải xác thực máy chủ.</p>
+    <p class="text-[10px] text-amber-700 bg-amber-50 rounded-xl p-3">Dữ liệu chỉ nằm trong trình duyệt này, không đồng bộ giữa các máy. Ở chế độ ẩn danh, dữ liệu có thể bị xóa khi đóng phiên; hãy xuất sao lưu để giữ lại. Đây là khóa giao diện cục bộ, không phải xác thực máy chủ.${storageMode === 'session' ? ' Trình duyệt đang chặn lưu trữ lâu dài; dữ liệu chỉ giữ trong phiên hiện tại.' : storageMode === 'memory' ? ' Trình duyệt đang chặn lưu trữ; dữ liệu chỉ giữ cho đến khi tải lại trang.' : ''}</p>
   </section></div>`;
 }
 function togglePassword(id, button) {
@@ -1361,7 +1420,7 @@ async function registerLocalAccount() {
   try {
     const credential = await passwordBytes(password);
     const auth = { version: 1, email, ...credential, session: true };
-    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+    writeStoredValue(AUTH_KEY, JSON.stringify(auth));
     AUTH = auth; render();
   } catch (e) { alert(e.message || 'Không thể tạo tài khoản trên thiết bị này.'); }
 }
@@ -1372,16 +1431,14 @@ async function loginLocalAccount() {
     const result = await passwordBytes(password, AUTH.salt);
     if (result.hash !== AUTH.hash) { alert('Email hoặc mật khẩu không đúng.'); return; }
     const auth = { ...AUTH, session: true };
-    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+    writeStoredValue(AUTH_KEY, JSON.stringify(auth));
     AUTH = auth; render();
   } catch (e) { alert(e.message || 'Không thể đăng nhập trên thiết bị này.'); }
 }
 function logoutLocalAccount() {
   const auth = { ...AUTH, session: false };
-  try {
-    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
-    AUTH = auth; closeM(); render();
-  } catch (e) { alert('Không thể đăng xuất do trình duyệt không cho phép lưu dữ liệu.'); }
+  writeStoredValue(AUTH_KEY, JSON.stringify(auth));
+  AUTH = auth; closeM(); render();
 }
 function openForm(vk, id) {
   pendingVideoMetadata = Promise.resolve();

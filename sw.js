@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'prdcv-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v6`;
+const CACHE_NAME = `${CACHE_PREFIX}v7`;
 const SHELL_FILES = [
   './',
   './index.html',
@@ -12,7 +12,9 @@ const SHELL_FILES = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL_FILES)));
+  event.waitUntil(caches.open(CACHE_NAME)
+    .then(cache => cache.addAll(SHELL_FILES))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
