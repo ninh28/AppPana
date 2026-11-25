@@ -1,18 +1,17 @@
 const CACHE_PREFIX = 'prdcv-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v4`;
+const CACHE_NAME = `${CACHE_PREFIX}v5`;
 const SHELL_FILES = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
-  './icon-180.png',
-  './assets/tailwind.css',
-  './assets/css/fontawesome.css',
-  './assets/webfonts/fa-solid-900.woff2'
+  './icon-180.png'
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL_FILES)));
+  event.waitUntil(caches.open(CACHE_NAME)
+    .then(cache => cache.addAll(SHELL_FILES))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
