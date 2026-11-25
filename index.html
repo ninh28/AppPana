@@ -29,6 +29,7 @@ header{padding-top:env(safe-area-inset-top)}
     </div>
     <div id="accountActions" class="flex items-center gap-2" style="display:none">
       <button id="logoutButton" onclick="logoutLocalAccount()" class="bg-blue-600 hover:bg-blue-500 rounded-full px-3 py-2 text-xs font-semibold"><i class="fa-solid fa-right-from-bracket mr-1"></i>Đăng xuất</button>
+      <button id="notificationsButton" onclick="openNotifications()" aria-label="Thông báo quan trọng" class="relative w-9 h-9 bg-blue-600 hover:bg-blue-500 rounded-full text-xs"><i class="fa-solid fa-bell"></i><span id="notificationCount" class="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold leading-4"></span></button>
       <button id="settingsButton" onclick="openSettings()" aria-label="Cài đặt" class="w-9 h-9 bg-blue-600 hover:bg-blue-500 rounded-full text-xs"><i class="fa-solid fa-gear"></i></button>
     </div>
   </div>
@@ -107,6 +108,7 @@ let migratedOnLoad = false;
 if (!S) { S = seed(); migratedOnLoad = migrate(true); save(); }
 else { migratedOnLoad = migrate(false); if (migratedOnLoad) save(); }
 let tab = 0;
+let collectionDay = today();
 let pendingImport = null;
 
 function save() {
@@ -458,23 +460,52 @@ function cell(v, r, x) {
   return esc(r[x.k]);
 }
 function tbl(vk) {
-  const v = V[vk], rows = S[v.c].filter(r => !v.need || r[v.need]), ppl = v.c === 'people';
+  const v = V[vk], rows = S[v.c].filter(r => !v.need || r[v.need]), ppl = v.c === 'people', participantList = vk === 'p';
   const statusKey = ppl ? 'qc' : (vk === 'd' ? 'st' : vk === 'r' ? 'rs' : '');
   const statusValues = statusKey ? [...new Set(rows.map(r => r[statusKey]).filter(Boolean))] : [];
   const th = t => `<th class="p-2 text-left">${t}</th>`;
   const search = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2"><input id="search_${vk}" oninput="filterTable('${vk}')" placeholder="Tìm tên, SĐT, mã ID, tên file..." class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"><select id="state_${vk}" onchange="filterTable('${vk}')" class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"><option value="">Tất cả trạng thái</option>${statusValues.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select></div>`;
-  return search + `<div class="tc border border-slate-200 rounded-xl"><table id="table_${vk}" class="w-full text-xs whitespace-nowrap"><thead class="bg-slate-100 text-[11px] text-slate-600"><tr>${th('#')}${ppl ? th('Mã') : ''}${v.f.map(x => th(x.l)).join('')}<th></th></tr></thead><tbody class="divide-y divide-slate-100">` +
+  return search + `<div class="tc border border-slate-200 rounded-xl"><table id="table_${vk}" class="w-full text-xs whitespace-nowrap"><thead class="bg-slate-100 text-[11px] text-slate-600"><tr>${th('#')}${ppl ? th('Mã') : ''}${v.f.map(x => th(x.l)).join('')}${participantList ? th('Video ngày chọn') : ''}<th></th></tr></thead><tbody class="divide-y divide-slate-100">` +
     (rows.map((r, i) => {
       const searchable = [r.id,r.name,r.phone,r.file,r.code,r.title,r.note,...v.f.map(x=>r[x.k])].filter(Boolean).join(' ').toLowerCase();
-      return `<tr data-search="${esc(searchable)}" data-state="${esc(statusKey ? r[statusKey] || '' : '')}" data-record-id="${esc(r.id)}"><td class="p-2">${i + 1}</td>${ppl ? `<td class="p-2 font-mono">${esc(r.id)}</td>` : ''}${v.f.map(x => `<td class="p-2">${cell(v, r, x)}</td>`).join('')}<td class="p-2"><button aria-label="Sửa" onclick="editFrom(this)" data-view="${esc(vk)}" data-id="${esc(r.id)}" class="text-blue-600 px-1.5"><i class="fa-solid fa-pen"></i></button><button aria-label="Xóa" onclick="deleteFrom(this)" data-collection="${esc(v.c)}" data-id="${esc(r.id)}" class="text-red-500 px-1.5"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+      const dailyVideos = participantList ? videoRecords(r).filter(video => video.shoot === collectionDay).length : 0;
+      const inSelectedDay = participantList && (r.book === collectionDay || dailyVideos > 0);
+      const personVideoMatch = r.book === collectionDay ? dailyVideos === 1 : dailyVideos === 0;
+      return `<tr data-search="${esc(searchable)}" data-state="${esc(statusKey ? r[statusKey] || '' : '')}" data-date-match="${inSelectedDay ? '1' : '0'}" data-record-id="${esc(r.id)}"><td class="p-2">${i + 1}</td>${ppl ? `<td class="p-2 font-mono">${esc(r.id)}</td>` : ''}${v.f.map(x => `<td class="p-2">${cell(v, r, x)}</td>`).join('')}${participantList ? `<td class="p-2"><span class="px-2 py-0.5 rounded font-bold ${personVideoMatch ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${dailyVideos}${personVideoMatch ? '' : ' · Lệch'}</span></td>` : ''}<td class="p-2"><button aria-label="Sửa" onclick="editFrom(this)" data-view="${esc(vk)}" data-id="${esc(r.id)}" class="text-blue-600 px-1.5"><i class="fa-solid fa-pen"></i></button><button aria-label="Xóa" onclick="deleteFrom(this)" data-collection="${esc(v.c)}" data-id="${esc(r.id)}" class="text-red-500 px-1.5"><i class="fa-solid fa-trash"></i></button></td></tr>`;
     }).join('') || `<tr><td colspan="12" class="p-4 text-center text-slate-400">Chưa có dữ liệu. Bấm nút thêm ở trên.</td></tr>`) + `</tbody></table></div>`;
 }
 function filterTable(vk) {
   const q = ($('#search_' + vk)?.value || '').trim().toLowerCase();
   const st = $('#state_' + vk)?.value || '';
   document.querySelectorAll(`#table_${vk} tbody tr[data-search]`).forEach(tr => {
-    tr.style.display = (!q || tr.dataset.search.includes(q)) && (!st || tr.dataset.state === st) ? '' : 'none';
+    const dateMatches = vk !== 'p' || tr.dataset.dateMatch === '1';
+    tr.style.display = dateMatches && (!q || tr.dataset.search.includes(q)) && (!st || tr.dataset.state === st) ? '' : 'none';
   });
+}
+
+function collectionSummary() {
+  const day = collectionDay || today();
+  const registered = S.people.filter(person => person.book === day);
+  const videos = allVideoRecords().filter(({ video }) => video.shoot === day);
+  const recordedPeople = new Set(videos.map(({ person }) => person.id));
+  const peopleToCheck = S.people.filter(person => person.book === day || recordedPeople.has(person.id));
+  const mismatches = peopleToCheck.filter(person => {
+    const dailyVideos = videoRecords(person).filter(video => video.shoot === day).length;
+    return person.book === day ? dailyVideos !== 1 : dailyVideos !== 0;
+  });
+  const hasMismatch = registered.length !== videos.length || mismatches.length > 0;
+  const metric = (value, label) => `<div class="rounded-xl p-2 text-center ${hasMismatch ? 'bg-rose-50' : 'bg-slate-50'}"><b class="text-lg">${value}</b><p class="text-[10px] text-slate-600">${label}</p></div>`;
+  const warning = hasMismatch
+    ? `<div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">Cảnh báo: đăng ký ${registered.length} người nhưng có ${videos.length} video; ${mismatches.length} người chưa khớp theo từng người${mismatches.length ? `: ${mismatches.map(person => esc(person.name || person.id)).join(', ')}` : ''}.</div>`
+    : '<div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">Số người đăng ký khớp số video; mỗi người có đúng 1 video trong ngày.</div>';
+  return card(head('fa-calendar-day', `Thu thập ngày ${esc(fd(day))}`) +
+    `<label class="block text-xs font-semibold">Lọc ngày<input id="collectionDate" type="date" value="${esc(day)}" onchange="setCollectionDay(this.value)" class="${inp}"></label>` +
+    `<div class="grid grid-cols-3 gap-2">${metric(registered.length, 'Người đăng ký')}${metric(recordedPeople.size, 'Người có video')}${metric(videos.length, 'Video thu thập')}</div>${warning}` +
+    '<p class="text-[10px] text-slate-500">Người đăng ký được tính theo ngày hẹn; video được tính theo ngày quay. Danh sách bên dưới gồm người hẹn hoặc quay trong ngày đã chọn.</p>');
+}
+function setCollectionDay(day) {
+  collectionDay = day || today();
+  render();
 }
 
 const iso = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
@@ -904,6 +935,24 @@ function dashboard() {
     card(head('fa-calendar-day', 'Việc của tôi hôm nay') + `<div class="flex gap-2"><input id="ti" onkeydown="if(event.key==='Enter')addTask()" placeholder="Nhập việc cần làm..." class="flex-1 p-2 bg-slate-50 border rounded-xl text-xs"><button onclick="addTask()" class="bg-blue-600 text-white px-3 rounded-xl text-xs font-semibold">Thêm</button></div><div class="space-y-2 text-xs">${tasks}</div>
       <div class="grid grid-cols-2 gap-2"><button onclick="openReport()" class="bg-emerald-600 text-white font-semibold py-2.5 rounded-xl text-xs"><i class="fa-solid fa-file-lines"></i> Báo cáo cuối ngày</button><button onclick="exportReportCSV()" class="bg-slate-800 text-white font-semibold py-2.5 rounded-xl text-xs"><i class="fa-solid fa-file-csv"></i> Xuất Excel / CSV</button></div>`);
 }
+function openNotifications() {
+  const items = alerts();
+  const rows = items.map((item, index) => `<button onclick="openNotificationFrom(this)" data-alert-index="${index}" class="w-full text-left p-3 rounded-xl border flex gap-2 ${item.lvl === 'r' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-900'}"><i class="fa-solid ${item.lvl === 'r' ? 'fa-circle-exclamation' : 'fa-bell'} mt-0.5"></i><span>${esc(item.txt)}<span class="block text-[10px] font-semibold mt-1">Chạm để xem</span></span></button>`).join('');
+  showM(mhead(`Thông báo quan trọng (${items.length})`) +
+    `<div class="space-y-2">${rows || '<p class="text-xs text-slate-500">Hiện không có thông báo quan trọng.</p>'}</div>`);
+}
+function openNotificationFrom(button) {
+  const item = alerts()[Number(button.dataset.alertIndex)];
+  if (!item) return;
+  closeM();
+  if (item.to === 'bk') { openSettings(); return; }
+  if (item.to === 'issues') {
+    go(0);
+    requestAnimationFrame(() => document.getElementById('issues')?.scrollIntoView({ behavior: 'smooth' }));
+    return;
+  }
+  go(Number(item.to));
+}
 function render() {
   if (!AUTH || !AUTH.session) {
     $('#accountActions').style.display = 'none';
@@ -914,11 +963,14 @@ function render() {
     return;
   }
   $('#accountActions').style.display = 'flex';
+  const notificationCount = alerts().length;
+  $('#notificationCount').textContent = notificationCount > 99 ? '99+' : String(notificationCount);
+  $('#notificationCount').style.display = notificationCount ? '' : 'none';
   $('#nav').innerHTML = `<div class="max-w-md md:max-w-6xl mx-auto grid grid-cols-7 h-14">${TABS.map((t, i) => `<button onclick="go(${i})" class="flex flex-col items-center justify-center ${i === tab ? 'text-blue-600 font-bold' : 'text-slate-400'}"><i class="fa-solid ${t[0]} text-base"></i><span class="text-[10px] mt-0.5">${t[1]}</span></button>`).join('')}</div>`;
   $('#names').innerHTML = S.people.map(p => `<option value="${esc(p.name)}">`).join('');
   $('#app').innerHTML = [
     dashboard,
-    () => sched() + card(head('fa-users', 'Người tham gia', `<div class="flex gap-1">${addBtn('p', 'Thêm')}<button onclick="openPaste()" class="text-[11px] bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-full border">Dán danh sách</button></div>`) + tbl('p')),
+    () => sched() + collectionSummary() + card(head('fa-users', 'Người tham gia', `<div class="flex gap-1">${addBtn('p', 'Thêm')}<button onclick="openPaste()" class="text-[11px] bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-full border">Dán danh sách</button></div>`) + tbl('p')),
     videoView,
     () => card(head('fa-cloud-arrow-up', 'Upload server') + tbl('u')) + card(head('fa-tags', 'Gán nhãn & nghiệm thu') + tbl('l')),
     () => card(head('fa-microchip', 'Thiết bị', addBtn('d', 'Thêm thiết bị')) + tbl('d')) + card(head('fa-triangle-exclamation', 'Vấn đề & rủi ro', addBtn('r', 'Thêm vấn đề')) + tbl('r')),
@@ -926,6 +978,7 @@ function render() {
     historyView
   ][tab]();
   if (S.undoStack.length) $('#app').insertAdjacentHTML('afterbegin', undoPanel());
+  if (tab === 1) filterTable('p');
   updateSaveStatus();
 }
 function go(i) { tab = i; render(); scrollTo(0, 0); }
