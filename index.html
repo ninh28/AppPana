@@ -817,7 +817,7 @@ function suggestVideoPerson(entry) {
     .map(person => ({ person, difference: Math.abs(new Date(person.startAt).getTime() - capture.getTime()) }))
     .sort((a, b) => a.difference - b.difference);
   const closest = candidates[0], runnerUp = candidates[1];
-  if (!closest || closest.difference > 5 * 60 * 1000) return null;
+  if (!closest) return null;
   if (runnerUp && runnerUp.difference - closest.difference < 2 * 60 * 1000) return null;
   return closest.person;
 }
@@ -944,7 +944,7 @@ function openVideoInbox() {
       ? `Nhiều video gần giờ của ${esc(candidate.id)} · ${esc(candidate.name)}; cần ghép thủ công.`
       : suggested
         ? `Gợi ý: ${esc(suggested.id)} · ${esc(suggested.name)} (lệch ${Math.round(Math.abs(new Date(suggested.startAt).getTime() - capture.getTime()) / 60000)} phút).`
-        : capture ? 'Không có khớp đủ chắc trong ±5 phút; hãy chọn thủ công.' : 'Chưa có thời điểm đủ tin cậy để gợi ý; hãy chọn thủ công.';
+        : capture ? 'Không có gợi ý duy nhất; hãy chọn người tham gia thủ công.' : 'Chưa có thời điểm đủ tin cậy để gợi ý; hãy chọn thủ công.';
     return `<div class="p-3 border rounded-xl space-y-2" data-inbox-item="${esc(entry.id)}"><div class="font-semibold break-all">${esc(entry.file)}</div>
       <div class="text-xs text-slate-500">${esc(entry.size)} · ${esc(entry.dur || 'Chưa đọc được thời lượng')}${entry.gender ? ` · ${esc(entry.gender)}` : ''}${entry.age ? ` · ${esc(entry.age)}` : ''}</div>
       <div class="text-xs text-slate-500">${captureHint}</div>
@@ -952,7 +952,7 @@ function openVideoInbox() {
       <select data-suggested="${esc(suggested ? suggested.id : '')}" class="${inp}"><option value="">Chọn người tham gia...</option>${peopleOptions}</select>
       <button onclick="attachInboxFrom(this)" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl">Xác nhận gắn video này</button></div>`;
   }).join('');
-  const summary = items ? `<p class="text-xs text-slate-600">${confidentCount} gợi ý duy nhất, ${predictions.length - confidentCount} video cần kiểm tra/chọn thủ công. Gợi ý chỉ được dùng trong phạm vi ±5 phút và không có người khác gần tương đương.</p>` : '';
+  const summary = items ? `<p class="text-xs text-slate-600">${confidentCount} gợi ý duy nhất, ${predictions.length - confidentCount} video cần kiểm tra/chọn thủ công. Gợi ý dựa trên người có thời điểm bắt đầu gần nhất; hãy kiểm tra lựa chọn trước khi gắn.</p>` : '';
   showM(mhead(`Video chưa ghép (${S.cfg.videoInbox.length})`) + summary + (items || '<p class="text-slate-500">Không còn video nào chờ ghép.</p>') +
     (items ? `<button onclick="selectSuggestions()" class="w-full bg-slate-100 py-2.5 rounded-xl font-semibold">Chọn các gợi ý chắc chắn (chưa gắn)</button><button onclick="attachAllInbox()" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-semibold">Xác nhận gắn các video đã chọn</button>` : ''));
 }

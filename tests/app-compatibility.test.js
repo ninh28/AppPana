@@ -117,3 +117,18 @@ test('people list shows everyone by default and filters when a date is selected'
   vm.runInContext("document.querySelectorAll = () => testRows; filterTable('p')", app.context);
   assert.deepEqual(filteredRows.map(row => row.style.display), ['', 'none']);
 });
+
+test('suggests the nearest person even when capture time is more than five minutes away', () => {
+  const app = startApp();
+  vm.runInContext(`
+    S.people = [{ id: 'P1', name: 'Demo', startAt: '2026-11-25T10:00:00' }];
+    S.cfg.filenameTimeEnabled = false;
+  `, app.context);
+
+  const suggested = vm.runInContext(`suggestVideoPerson({
+    dateHint: '2026-11-25',
+    fileDate: '2026-11-25T11:00:00',
+    file: 'video.mp4'
+  })`, app.context);
+  assert.equal(suggested.id, 'P1');
+});
